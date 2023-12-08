@@ -22,6 +22,7 @@
 #include <string>
 #include <string.h>
 #include <vector>
+using namespace std;
 
 
 /* Private includes ----------------------------------------------------------*/
@@ -103,22 +104,84 @@ void LCD_SendString(char *str)
     }
 }
 
-//парсер
-std::string parser(char qq)
+
+//парсер. Пока void, но позже над этим подумаю
+vector<string> parser(std::string pre_parser)
+{
+	std::vector<std::string> after_parser;
+	std::vector<std::string> list_command;
+	/*не забыть переделать этот блок. Сделать поиск не через предварительно записынные команды,
+	 * а именно через парсинг команды, чтобы и не дублировать код, и уменьшить его количество*/
+	list_command.push_back("print_str");
+	list_command.push_back("print_arr");
+	list_command.push_back("sum");
+	list_command.push_back("diff");
+
+	//поиск команды в введенной строке (че надо сделать: сложить, вычесть, напечатать)
+	for (int i = 0; i < list_command.size(); i++)
+	{
+		if ( pre_parser.find(list_command[i]) )
+		{
+			after_parser.push_back(list_command[i]);
+
+			//выборка значений указанных в скобках
+				for (int j = 0; j < pre_parser.size(); j++)
+				{
+					if(pre_parser[j] == '(')
+					{
+						string source = pre_parser.substr(j+1, pre_parser.size() - (j-1));
+						char *s = new char[source.size() + 1];
+						strcpy(s, source.c_str());
+						char *splited_data = strtok(s, ", ");
+						while (splited_data != NULL)
+						{
+							after_parser.push_back(splited_data);
+							splited_data = strtok(NULL, ", ");
+						}
+						delete[] s;
+						break;
+					}
+				}
+			break;
+		}
+	}
+
+return after_parser;
+
+}
+
+//функция, выводящая на дисплей строку
+void print_str(vector<string> parsered_data)
+{
+    I2C_send(0b00110000,0);   // 8ми битный интерфейс
+    I2C_send(0b00000010,0);   // установка курсора в начале строки
+    I2C_send(0b00001100,0);   // нормальный режим работы
+    I2C_send(0b00000001,0);   // очистка дисплея
+
+    char *s = new char[parsered_data[2].size() + 1];
+	strcpy(s, parsered_data[2].c_str());
+	//delete[] s;
+
+    I2C_send(0b10000000,0);   // переход на 1 строку, тут не обязателен
+    LCD_SendString(s);
+}
+
+//функция, выводящая число, записанное в указанной ячейке массива
+void print_arr(vector<string> parsered_data)
 {
 
 }
 
-//функция, осуществляющая вывод информации на дисплей
-
 //функция, находящая сумму и записывающая ее в массив
-void sum(int num_cell, double a, double b)
+int sum(vector<string> parsered_data)
+//void sum(int num_cell, double a, double b)
 {
 
 }
 
 //функция, находящая разность и записывающая ее в массив
-void diff(int num_cell, double a, double b)
+int diff(vector<string> parsered_data)
+//void diff(int num_cell, double a, double b)
 {
 
 }
@@ -180,64 +243,59 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-    uint8_t strdisp[100];
+    char input_data_read[1];
+	char input_data[100];
+    int i;
+    std::vector<std::string> parsered_data;
 
-
-
-    uint8_t strd[5];
-    std::string message = "fff";
-    char dsr[10];
-    char tht[100];
-    char message1 = message[0];
+    memset(input_data, 0, sizeof(input_data)); //уж лучше путь нули точно во всей строке будут, чем что то не сильно понятное
 
 
     while (1)
     {
     	//цикл, осуществляющий запись и вывод данных
-    	for(int i = 0;; i++)
+    	for(i = 0;; i++)
     	{
     		//если данные отпралены, то они все считаются и запищутся в новую переменную
-			if( HAL_UART_Receive(&huart2, (uint8_t *)dsr, 1, 10) == HAL_OK )
+			if( HAL_UART_Receive(&huart2, (uint8_t *)input_data_read, 1, 10) == HAL_OK )
 			{
-				tht[i] = dsr[0]; //запись полученных данных в новую переменную
-				//HAL_UART_Transmit(&huart2, (uint8_t *)tht, i, 3); //чисто для проверки. Удалить
+				input_data[i] = input_data_read[0]; //запись полученных данных в новую переменную
 			}
 			//вызввается, если считывание данных не прошло
 			else
 			{
 				//если данные завершатся указанным знаком, то откроется режим вывода на дисплей
-				if(tht[i - 1] == '.')
+				if(input_data[i - 1] == ')')
 				{
-					HAL_UART_Transmit(&huart2, (uint8_t *)tht, i, 3); //чисто для проверки. Удалить
-					I2C_send(0b00110000,0);   // 8ми битный интерфейс
+					parsered_data = parser(input_data);
+					//пока так. Надо подумать как через switch case сделать в идеале
+					print_str(parsered_data);
+					if ( parsered_data[0] == "print_arr" ) print_str(parsered_data);
+					if ( parsered_data[0] == "sum" ) print_str(parsered_data);
+					if ( parsered_data[0] == "diff" ) print_str(parsered_data);
+
+
+					HAL_UART_Transmit(&huart2, (uint8_t *)input_data, i, 3); //чисто для проверки. Удалить
+					/*I2C_send(0b00110000,0);   // 8ми битный интерфейс
 					I2C_send(0b00000010,0);   // установка курсора в начале строки
 					I2C_send(0b00001100,0);   // нормальный режим работы
 					I2C_send(0b00000001,0);   // очистка дисплея
 
 					I2C_send(0b10000000,0);   // переход на 1 строку, тут не обязателен
-					LCD_SendString("some string");
+					LCD_SendString("some string");/*
 					I2C_send(0b11000000,0);   // переход на 2 строку
-					LCD_SendString((char *)tht);
-					tht[i - 1] = 0; //подмена завершающего символа, чтобы закрыть возможность входа в это условие и надпись осталась
+					LCD_SendString((char *)input_data);*/
+					memset(input_data, 0, sizeof(input_data));
+					/*выше была произведена змена всех символов нулями. Это сделано для двух целей
+					 * 1. подмена завершающего символа, чтобы закрыть возможность входа в это условие и надпись осталась
+					 * 2. затирание лишней информации поступающей на выход, когда последующая строка меньше предыдущей
+					 * возможно потом откажусь от этого решения */
+					//input_data[i - 1] = 0; //подмена завершающего символа, чтобы закрыть возможность входа в это условие и надпись осталась
 				}
 				break;
 			}
     	}
 
-/*
-		  std::string a = dsr;
-		  char message3 = a[2];
-
-		  I2C_send(0b00110000,0);   // 8ми битный интерфейс
-		  I2C_send(0b00000010,0);   // установка курсора в начале строки
-		  I2C_send(0b00001100,0);   // нормальный режим работы
-		  I2C_send(0b00000001,0);   // очистка дисплея
-
-		  I2C_send(0b10000000,0);   // переход на 1 строку, тут не обязателен
-		  LCD_SendString("some string");
-		  I2C_send(0b11000000,0);   // переход на 2 строку
-		  LCD_SendString((char *)dsr);
-*/
 
 
     /* USER CODE END WHILE */
