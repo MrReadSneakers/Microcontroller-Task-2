@@ -72,6 +72,8 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+double memory_array[100];
+
 // функция для отправки данных, data - сами данные, flags - 1 (отправка данных) или 0 (отправка команд)
 void I2C_send(uint8_t data, uint8_t flags)
 {
@@ -109,39 +111,25 @@ void LCD_SendString(char *str)
 vector<string> parser(std::string pre_parser)
 {
 	std::vector<std::string> after_parser;
-	std::vector<std::string> list_command;
-	/*не забыть переделать этот блок. Сделать поиск не через предварительно записынные команды,
-	 * а именно через парсинг команды, чтобы и не дублировать код, и уменьшить его количество*/
-	list_command.push_back("print_str");
-	list_command.push_back("print_arr");
-	list_command.push_back("sum");
-	list_command.push_back("diff");
 
 	//поиск команды в введенной строке (че надо сделать: сложить, вычесть, напечатать)
-	for (int i = 0; i < list_command.size(); i++)
+	for (int i = 0; i < pre_parser.size(); i++)
 	{
-		if ( pre_parser.find(list_command[i]) )
+		if ( pre_parser[i] == '(')
 		{
-			after_parser.push_back(list_command[i]);
+			after_parser.push_back( pre_parser.substr(0, i) );
 
-			//выборка значений указанных в скобках
-				for (int j = 0; j < pre_parser.size(); j++)
-				{
-					if(pre_parser[j] == '(')
-					{
-						string source = pre_parser.substr(j+1, pre_parser.size() - (j-1));
-						char *s = new char[source.size() + 1];
-						strcpy(s, source.c_str());
-						char *splited_data = strtok(s, ", ");
-						while (splited_data != NULL)
-						{
-							after_parser.push_back(splited_data);
-							splited_data = strtok(NULL, ", ");
-						}
-						delete[] s;
-						break;
-					}
-				}
+			string source = pre_parser.substr(i+1, pre_parser.size() - (i+2));
+			char *s = new char[source.size()+1];
+			strcpy(s, source.c_str());
+			char *splited_data = strtok(s, ", ");
+			while (splited_data != NULL)
+			{
+				after_parser.push_back(splited_data);
+				splited_data = strtok(NULL, ", ");
+			}
+			delete[] s;
+
 			break;
 		}
 	}
@@ -160,30 +148,74 @@ void print_str(vector<string> parsered_data)
 
     char *s = new char[parsered_data[2].size() + 1];
 	strcpy(s, parsered_data[2].c_str());
-	//delete[] s;
 
-    I2C_send(0b10000000,0);   // переход на 1 строку, тут не обязателен
-    LCD_SendString(s);
+	switch (stoi(parsered_data[1]))
+	{
+		case 1:
+			I2C_send(0b10000000,0);   // переход на 1 строку
+			LCD_SendString(s);
+			break;
+		case 2:
+		    I2C_send(0b11000000,0);   // переход на 2 строку
+			LCD_SendString(s);
+			break;
+		case 3:
+		    I2C_send(0b10010100,0);   // переход на 3 строку
+			LCD_SendString(s);
+			break;
+		case 4:
+		    I2C_send(0b11010100,0);   // переход на 4 строку
+			LCD_SendString(s);
+			break;
+	}
 }
 
 //функция, выводящая число, записанное в указанной ячейке массива
 void print_arr(vector<string> parsered_data)
 {
 
+	I2C_send(0b00110000,0);   // 8ми битный интерфейс
+	I2C_send(0b00000010,0);   // установка курсора в начале строки
+	I2C_send(0b00001100,0);   // нормальный режим работы
+	I2C_send(0b00000001,0);   // очистка дисплея
+
+
+	char outString[100];
+	memset(outString, 0, sizeof(outString));
+	sprintf(outString, "arr[%d] = %f", stoi(parsered_data[2]), memory_array[stoi(parsered_data[2])]);
+
+	switch (stoi(parsered_data[1]))
+	{
+		case 1:
+			I2C_send(0b10000000,0);   // переход на 1 строку
+			LCD_SendString(outString);
+			break;
+		case 2:
+		    I2C_send(0b11000000,0);   // переход на 2 строку
+			LCD_SendString(outString);
+			break;
+		case 3:
+		    I2C_send(0b10010100,0);   // переход на 3 строку
+			LCD_SendString(outString);
+			break;
+		case 4:
+		    I2C_send(0b11010100,0);   // переход на 4 строку
+			LCD_SendString(outString);
+			break;
+	}
+
 }
 
 //функция, находящая сумму и записывающая ее в массив
-int sum(vector<string> parsered_data)
-//void sum(int num_cell, double a, double b)
+void sum(vector<string> parsered_data)
 {
-
+	memory_array[stoi(parsered_data[1])] = stod(parsered_data[2]) + stod(parsered_data[3]);
 }
 
 //функция, находящая разность и записывающая ее в массив
-int diff(vector<string> parsered_data)
-//void diff(int num_cell, double a, double b)
+void diff(vector<string> parsered_data)
 {
-
+	memory_array[stoi(parsered_data[1])] = stod(parsered_data[2]) - stod(parsered_data[3]);
 }
 
 
@@ -243,6 +275,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
+
     char input_data_read[1];
 	char input_data[100];
     int i;
@@ -269,28 +302,18 @@ int main(void)
 				{
 					parsered_data = parser(input_data);
 					//пока так. Надо подумать как через switch case сделать в идеале
-					print_str(parsered_data);
-					if ( parsered_data[0] == "print_arr" ) print_str(parsered_data);
-					if ( parsered_data[0] == "sum" ) print_str(parsered_data);
-					if ( parsered_data[0] == "diff" ) print_str(parsered_data);
+					if ( parsered_data[0] == "sum" ) sum(parsered_data);
+					if ( parsered_data[0] == "print_str" ) print_str(parsered_data);
+					if ( parsered_data[0] == "print_arr" ) print_arr(parsered_data);
+					if ( parsered_data[0] == "diff" ) diff(parsered_data);
 
 
 					HAL_UART_Transmit(&huart2, (uint8_t *)input_data, i, 3); //чисто для проверки. Удалить
-					/*I2C_send(0b00110000,0);   // 8ми битный интерфейс
-					I2C_send(0b00000010,0);   // установка курсора в начале строки
-					I2C_send(0b00001100,0);   // нормальный режим работы
-					I2C_send(0b00000001,0);   // очистка дисплея
-
-					I2C_send(0b10000000,0);   // переход на 1 строку, тут не обязателен
-					LCD_SendString("some string");/*
-					I2C_send(0b11000000,0);   // переход на 2 строку
-					LCD_SendString((char *)input_data);*/
 					memset(input_data, 0, sizeof(input_data));
 					/*выше была произведена змена всех символов нулями. Это сделано для двух целей
 					 * 1. подмена завершающего символа, чтобы закрыть возможность входа в это условие и надпись осталась
 					 * 2. затирание лишней информации поступающей на выход, когда последующая строка меньше предыдущей
 					 * возможно потом откажусь от этого решения */
-					//input_data[i - 1] = 0; //подмена завершающего символа, чтобы закрыть возможность входа в это условие и надпись осталась
 				}
 				break;
 			}
